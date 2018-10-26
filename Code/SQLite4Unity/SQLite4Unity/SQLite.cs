@@ -55,8 +55,13 @@ using Sqlite3Statement = System.IntPtr;
 
 #pragma warning disable 1591 // XML Doc Comments
 
-namespace SQLite
+namespace SQLite4Unity
 {
+    public interface IJsonConverter
+    {
+        object FromBody(Type t, string body);
+        string ToBody(object data);
+    }
     public class SQLiteException : Exception
     {
         public SQLite3.Result Result { get; private set; }
@@ -169,6 +174,7 @@ namespace SQLite
         readonly static Dictionary<string, TableMapping> _mappings = new Dictionary<string, TableMapping>();
         private System.Diagnostics.Stopwatch _sw;
         private long _elapsedMilliseconds = 0;
+        private IJsonConverter _jsonConvert;
 
         private int _transactionDepth = 0;
         private Random _rand = new Random();
@@ -232,8 +238,12 @@ namespace SQLite
         /// <param name="key">
         /// Specifies the encryption key to use on the database. Should be a string or a byte[].
         /// </param>
-        public SQLiteConnection(string databasePath, bool storeDateTimeAsTicks = true, object key = null)
-            : this(databasePath, SQLiteOpenFlags.ReadWrite | SQLiteOpenFlags.Create, storeDateTimeAsTicks, key: key)
+        public SQLiteConnection(string databasePath, bool storeDateTimeAsTicks = true, IJsonConverter jsonConverter = null, object key = null)
+            : this(databasePath, SQLiteOpenFlags.ReadWrite | SQLiteOpenFlags.Create, jsonConverter, storeDateTimeAsTicks, key: key)
+        {
+        }
+        public SQLiteConnection(string databasePath, IJsonConverter jsonConverter)
+            : this(databasePath, SQLiteOpenFlags.ReadWrite | SQLiteOpenFlags.Create, jsonConverter, true)
         {
         }
 
@@ -257,7 +267,7 @@ namespace SQLite
         /// <param name="key">
         /// Specifies the encryption key to use on the database. Should be a string or a byte[].
         /// </param>
-        public SQLiteConnection(string databasePath, SQLiteOpenFlags openFlags, bool storeDateTimeAsTicks = true, object key = null)
+        public SQLiteConnection(string databasePath, SQLiteOpenFlags openFlags, IJsonConverter jsonConverter = null, bool storeDateTimeAsTicks = true, object key = null)
         {
             if (databasePath == null)
                 throw new ArgumentException("Must be specified", nameof(databasePath));
@@ -310,6 +320,8 @@ namespace SQLite
             {
                 ExecuteScalar<string>("PRAGMA journal_mode=WAL");
             }
+            _jsonConvert = jsonConverter;
+
         }
 
         /// <summary>
@@ -350,7 +362,7 @@ namespace SQLite
         {
             if (key == null) throw new ArgumentNullException(nameof(key));
             if (key.Length != 32) throw new ArgumentException("Key must be 32 bytes (256-bit)", nameof(key));
-            var s = String.Join("", key.Select(x => x.ToString("X2")));
+            var s = String.Join("", key.Select(x => x.ToString("X2")).ToArray());
             Execute("pragma key = \"x'" + s + "'\"");
         }
 
@@ -438,7 +450,7 @@ namespace SQLite
                 }
                 else
                 {
-                    map = new TableMapping(type, createFlags);
+                    map = new TableMapping(type, createFlags, _jsonConvert);
                     _mappings.Add(key, map);
                 }
             }
@@ -481,7 +493,14 @@ namespace SQLite
         {
             return DropTable(GetMapping(typeof(T)));
         }
+        public int DropTable(Type ty)
+        {
+            var map = GetMapping(ty);
 
+            var query = string.Format("drop table if exists \"{0}\"", map.TableName);
+
+            return Execute(query);
+        }
         /// <summary>
         /// Executes a "drop table" on the database.  This is non-recoverable.
         /// </summary>
@@ -1522,6 +1541,11 @@ namespace SQLite
                     c += Insert(r);
                 }
             }
+            if (c > 0)
+            {
+                Type t = objects.Cast<object>().First().GetType();
+                OnTableChanged(GetMapping(t), NotifyTableChangedAction.Insert);
+            }
             return c;
         }
 
@@ -1559,6 +1583,11 @@ namespace SQLite
                     c += Insert(r);
                 }
             }
+            if (c > 0)
+            {
+                Type t = objects.Cast<object>().First().GetType();
+                OnTableChanged(GetMapping(t), NotifyTableChangedAction.Insert);
+            }
             return c;
         }
 
@@ -1595,6 +1624,10 @@ namespace SQLite
                 {
                     c += Insert(r, objType);
                 }
+            }
+            if (c > 0)
+            {
+                OnTableChanged(GetMapping(objType), NotifyTableChangedAction.Insert);
             }
             return c;
         }
@@ -2261,7 +2294,10 @@ namespace SQLite
     public class IgnoreAttribute : Attribute
     {
     }
-
+    [AttributeUsage(AttributeTargets.Property)]
+    public class SaveAsJsonAttribute : Attribute
+    {
+    }
     [AttributeUsage(AttributeTargets.Property)]
     public class UniqueAttribute : IndexedAttribute
     {
@@ -2335,43 +2371,27 @@ namespace SQLite
         readonly Column[] _insertColumns;
         readonly Column[] _insertOrReplaceColumns;
 
-        public TableMapping(Type type, CreateFlags createFlags = CreateFlags.None)
+        public TableMapping(Type type, CreateFlags createFlags = CreateFlags.None, IJsonConverter jsonConvert = null)
         {
             MappedType = type;
             CreateFlags = createFlags;
 
-            var typeInfo = type.GetTypeInfo();
-            var tableAttr =
-                typeInfo.CustomAttributes
-                        .Where(x => x.AttributeType == typeof(TableAttribute))
-                        .Select(x => (TableAttribute)Orm.InflateAttribute(x))
-                        .FirstOrDefault();
-
+#if NETFX_CORE
+			var tableAttr = (TableAttribute)System.Reflection.CustomAttributeExtensions
+				.GetCustomAttribute(type.GetTypeInfo(), typeof(TableAttribute), true);
+#else
+            var tableAttr = (TableAttribute)type.GetCustomAttributes(typeof(TableAttribute), true).FirstOrDefault();
+#endif
             TableName = (tableAttr != null && !string.IsNullOrEmpty(tableAttr.Name)) ? tableAttr.Name : MappedType.Name;
             WithoutRowId = tableAttr != null ? tableAttr.WithoutRowId : false;
 
-            var props = new List<PropertyInfo>();
-            var baseType = type;
-            var propNames = new HashSet<string>();
-            while (baseType != typeof(object))
-            {
-                var ti = baseType.GetTypeInfo();
-                var newProps = (
-                    from p in ti.DeclaredProperties
-                    where
-                        !propNames.Contains(p.Name) &&
-                        p.CanRead && p.CanWrite &&
-                        (p.GetMethod != null) && (p.SetMethod != null) &&
-                        (p.GetMethod.IsPublic && p.SetMethod.IsPublic) &&
-                        (!p.GetMethod.IsStatic) && (!p.SetMethod.IsStatic)
-                    select p).ToList();
-                foreach (var p in newProps)
-                {
-                    propNames.Add(p.Name);
-                }
-                props.AddRange(newProps);
-                baseType = ti.BaseType;
-            }
+#if !NETFX_CORE
+            var props = MappedType.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.SetProperty);
+#else
+			var props = from p in MappedType.GetRuntimeProperties()
+						where ((p.GetMethod != null && p.GetMethod.IsPublic) || (p.SetMethod != null && p.SetMethod.IsPublic) || (p.GetMethod != null && p.GetMethod.IsStatic) || (p.SetMethod != null && p.SetMethod.IsStatic))
+						select p;
+#endif
 
             var cols = new List<Column>();
             foreach (var p in props)
@@ -2379,7 +2399,7 @@ namespace SQLite
                 var ignore = p.IsDefined(typeof(IgnoreAttribute), true);
                 if (!ignore)
                 {
-                    cols.Add(new Column(p, createFlags));
+                    cols.Add(new Column(p, createFlags, jsonConvert));
                 }
             }
             Columns = cols.ToArray();
@@ -2452,6 +2472,8 @@ namespace SQLite
         public class Column
         {
             PropertyInfo _prop;
+            private IJsonConverter _jsonConvert;
+            public bool SaveAsJson { get; private set; }
 
             public string Name { get; private set; }
 
@@ -2476,16 +2498,22 @@ namespace SQLite
 
             public bool StoreAsText { get; private set; }
 
-            public Column(PropertyInfo prop, CreateFlags createFlags = CreateFlags.None)
+            public Column(PropertyInfo prop, CreateFlags createFlags = CreateFlags.None, IJsonConverter jsonConvert = null)
             {
-                var colAttr = prop.CustomAttributes.FirstOrDefault(x => x.AttributeType == typeof(ColumnAttribute));
+                _jsonConvert = jsonConvert;
+
+#if !NETFX_CORE
+                SaveAsJson = prop.GetCustomAttributes(typeof(SaveAsJsonAttribute), true).Length > 0;
+#else
+				SaveAsJson = prop.GetCustomAttributes (typeof(SaveAsJsonAttribute), true).Count() > 0;
+#endif
+                var colAttr = (ColumnAttribute)prop.GetCustomAttributes(typeof(ColumnAttribute), true).FirstOrDefault();
 
                 _prop = prop;
-                Name = (colAttr != null && colAttr.ConstructorArguments.Count > 0) ?
-                        colAttr.ConstructorArguments[0].Value?.ToString() :
-                        prop.Name;
+                Name = colAttr == null ? prop.Name : colAttr.Name;
                 //If this type is Nullable<T> then Nullable.GetUnderlyingType returns the T, otherwise it returns null, so get the actual type instead
-                ColumnType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+                ColumnType = SaveAsJson ? typeof(string) : Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+
                 Collation = Orm.Collation(prop);
 
                 IsPK = Orm.IsPK(prop) ||
@@ -2508,14 +2536,39 @@ namespace SQLite
                 IsNullable = !(IsPK || Orm.IsMarkedNotNull(prop));
                 MaxStringLength = Orm.MaxStringLength(prop);
 
-                StoreAsText = prop.PropertyType.GetTypeInfo().CustomAttributes.Any(x => x.AttributeType == typeof(StoreAsTextAttribute));
+                var attrs = prop.PropertyType.GetCustomAttributes(typeof(StoreAsTextAttribute), true);
+#if !NETFX_CORE
+                StoreAsText = attrs.Length > 0;
+#else
+				StoreAsText =  attrs.Count() > 0;
+#endif
             }
 
             public void SetValue(object obj, object val)
             {
-                if (val != null && ColumnType.GetTypeInfo().IsEnum)
+
+                if (SaveAsJson)
                 {
-                    _prop.SetValue(obj, Enum.ToObject(ColumnType, val));
+                    if (_jsonConvert != null)
+                    {
+                        object result = _jsonConvert.FromBody(_prop.PropertyType, val as string);
+                        val = result;
+                    }
+                    else
+                    {
+                        throw new NotSupportedException("SaveAsJson need IJsonConvet when create connection");
+                    }
+                }
+#if !NETFX_CORE
+                var typeInfo = ColumnType;
+#else
+			var typeInfo = type.GetTypeInfo();
+#endif
+                bool isEnum = typeInfo.IsEnum;
+
+                if (val != null && isEnum)
+                {
+                    _prop.SetValue(obj, Enum.ToObject(ColumnType, val), null);
                 }
                 else
                 {
@@ -2525,23 +2578,42 @@ namespace SQLite
 
             public object GetValue(object obj)
             {
-                return _prop.GetValue(obj, null);
+                object getValue = _prop.GetGetMethod().Invoke(obj, null);
+                if (SaveAsJson)
+                {
+                    if (_jsonConvert != null)
+                    {
+                        object jsonText = _jsonConvert.ToBody(getValue);
+                        getValue = jsonText;
+                    }
+                    else
+                    {
+                        throw new NotSupportedException("SaveAsJson need IJsonConvet when create connection");
+                    }
+                }
+                return getValue;
             }
         }
     }
 
-    class EnumCacheInfo
+    public class EnumCacheInfo
     {
         public EnumCacheInfo(Type type)
         {
-            var typeInfo = type.GetTypeInfo();
-
+#if !NETFX_CORE
+            var typeInfo = type;
+#else
+			var typeInfo = type.GetTypeInfo();
+#endif
             IsEnum = typeInfo.IsEnum;
-
             if (IsEnum)
             {
-                StoreAsText = typeInfo.CustomAttributes.Any(x => x.AttributeType == typeof(StoreAsTextAttribute));
-
+                var attrs = typeInfo.GetCustomAttributes(typeof(StoreAsTextAttribute), true);
+#if !NETFX_CORE
+                StoreAsText = attrs.Length > 0;
+#else
+				StoreAsText =  attrs.Count() > 0;
+#endif
                 if (StoreAsText)
                 {
                     EnumValues = new Dictionary<int, string>();
@@ -2560,7 +2632,7 @@ namespace SQLite
         public Dictionary<int, string> EnumValues { get; private set; }
     }
 
-    static class EnumCache
+    public static class EnumCache
     {
         static readonly Dictionary<Type, EnumCacheInfo> Cache = new Dictionary<Type, EnumCacheInfo>();
 
@@ -2595,9 +2667,11 @@ namespace SQLite
         {
             if (obj == null)
                 return typeof(object);
-            var rt = obj as IReflectableType;
-            if (rt != null)
-                return rt.GetTypeInfo().AsType();
+#if NETFX_CORE
+			var rt = obj as IReflectableType;
+			if (rt != null)
+				return rt.GetTypeInfo().AsType();
+#endif
             return obj.GetType();
         }
 
@@ -2657,7 +2731,11 @@ namespace SQLite
             {
                 return "bigint";
             }
-            else if (clrType.GetTypeInfo().IsEnum)
+#if !NETFX_CORE
+            else if (clrType.IsEnum)
+#else
+			else if (clrType.GetTypeInfo().IsEnum)
+#endif
             {
                 if (p.StoreAsText)
                     return "varchar";
@@ -2674,91 +2752,114 @@ namespace SQLite
             }
             else
             {
-                throw new NotSupportedException("Don't know about " + clrType);
+                throw new NotSupportedException("Don't know about " + clrType + ", you can use SaveAsJson attribut to enable json serializer");
             }
         }
 
         public static bool IsPK(MemberInfo p)
         {
-            return p.CustomAttributes.Any(x => x.AttributeType == typeof(PrimaryKeyAttribute));
+            var attrs = p.GetCustomAttributes(typeof(PrimaryKeyAttribute), true);
+#if !NETFX_CORE
+            return attrs.Length > 0;
+#else
+			return attrs.Count() > 0;
+#endif
         }
 
         public static string Collation(MemberInfo p)
         {
-            return
-                (p.CustomAttributes
-                 .Where(x => typeof(CollationAttribute) == x.AttributeType)
-                 .Select(x => {
-                     var args = x.ConstructorArguments;
-                     return args.Count > 0 ? ((args[0].Value as string) ?? "") : "";
-                 })
-                 .FirstOrDefault()) ?? "";
+            var attrs = p.GetCustomAttributes(typeof(CollationAttribute), true);
+#if !NETFX_CORE
+            if (attrs.Length > 0)
+            {
+                return ((CollationAttribute)attrs[0]).Value;
+#else
+			if (attrs.Count() > 0) {
+				return ((CollationAttribute)attrs.First()).Value;
+#endif
+            }
+            else
+            {
+                return string.Empty;
+            }
         }
 
         public static bool IsAutoInc(MemberInfo p)
         {
-            return p.CustomAttributes.Any(x => x.AttributeType == typeof(AutoIncrementAttribute));
+            var attrs = p.GetCustomAttributes(typeof(AutoIncrementAttribute), true);
+#if !NETFX_CORE
+            return attrs.Length > 0;
+#else
+			return attrs.Count() > 0;
+#endif
         }
+#if NETFX_CORE
 
-        public static FieldInfo GetField(TypeInfo t, string name)
-        {
-            var f = t.GetDeclaredField(name);
-            if (f != null)
-                return f;
-            return GetField(t.BaseType.GetTypeInfo(), name);
-        }
+		public static FieldInfo GetField(TypeInfo t, string name)
+		{
+			var f = t.GetDeclaredField(name);
+			if (f != null)
+				return f;
+			return GetField(t.BaseType.GetTypeInfo(), name);
+		}
 
-        public static PropertyInfo GetProperty(TypeInfo t, string name)
-        {
-            var f = t.GetDeclaredProperty(name);
-            if (f != null)
-                return f;
-            return GetProperty(t.BaseType.GetTypeInfo(), name);
-        }
+		public static PropertyInfo GetProperty(TypeInfo t, string name)
+		{
+			var f = t.GetDeclaredProperty(name);
+			if (f != null)
+				return f;
+			return GetProperty(t.BaseType.GetTypeInfo(), name);
+		}
 
-        public static object InflateAttribute(CustomAttributeData x)
-        {
-            var atype = x.AttributeType;
-            var typeInfo = atype.GetTypeInfo();
-            var args = x.ConstructorArguments.Select(a => a.Value).ToArray();
-            var r = Activator.CreateInstance(x.AttributeType, args);
-            foreach (var arg in x.NamedArguments)
-            {
-                if (arg.IsField)
-                {
-                    GetField(typeInfo, arg.MemberName).SetValue(r, arg.TypedValue.Value);
-                }
-                else
-                {
-                    GetProperty(typeInfo, arg.MemberName).SetValue(r, arg.TypedValue.Value);
-                }
-            }
-            return r;
-        }
+		public static object InflateAttribute(CustomAttributeData x)
+		{
+			var atype = x.AttributeType;
+			var typeInfo = atype.GetTypeInfo();
+			var args = x.ConstructorArguments.Select(a => a.Value).ToArray();
+			var r = Activator.CreateInstance(x.AttributeType, args);
+			foreach (var arg in x.NamedArguments)
+			{
+				if (arg.IsField)
+				{
+					GetField(typeInfo, arg.MemberName).SetValue(r, arg.TypedValue.Value);
+				}
+				else
+				{
+					GetProperty(typeInfo, arg.MemberName).SetValue(r, arg.TypedValue.Value);
+				}
+			}
+			return r;
+		}
+#endif
 
         public static IEnumerable<IndexedAttribute> GetIndices(MemberInfo p)
         {
-            var indexedInfo = typeof(IndexedAttribute).GetTypeInfo();
-            return
-                p.CustomAttributes
-                 .Where(x => indexedInfo.IsAssignableFrom(x.AttributeType.GetTypeInfo()))
-                 .Select(x => (IndexedAttribute)InflateAttribute(x));
+            var attrs = p.GetCustomAttributes(typeof(IndexedAttribute), true);
+            return attrs.Cast<IndexedAttribute>();
         }
 
         public static int? MaxStringLength(PropertyInfo p)
         {
-            var attr = p.CustomAttributes.FirstOrDefault(x => x.AttributeType == typeof(MaxLengthAttribute));
-            if (attr != null)
-            {
-                var attrv = (MaxLengthAttribute)InflateAttribute(attr);
-                return attrv.Value;
-            }
+            var attrs = p.GetCustomAttributes(typeof(MaxLengthAttribute), true);
+#if !NETFX_CORE
+            if (attrs.Length > 0)
+                return ((MaxLengthAttribute)attrs[0]).Value;
+#else
+			if (attrs.Count() > 0)
+				return ((MaxLengthAttribute)attrs.First()).Value;
+#endif
+
             return null;
         }
 
         public static bool IsMarkedNotNull(MemberInfo p)
         {
-            return p.CustomAttributes.Any(x => x.AttributeType == typeof(NotNullAttribute));
+            var attrs = p.GetCustomAttributes(typeof(NotNullAttribute), true);
+#if !NETFX_CORE
+            return attrs.Length > 0;
+#else
+	return attrs.Count() > 0;
+#endif
         }
     }
 
@@ -3082,7 +3183,12 @@ namespace SQLite
             }
             else
             {
-                var clrTypeInfo = clrType.GetTypeInfo();
+#if !NETFX_CORE
+                var clrTypeInfo = clrType;
+#else
+				var clrTypeInfo = clrType.GetTypeInfo();
+#endif
+
                 if (clrType == typeof(String))
                 {
                     return SQLite3.ColumnString(stmt, index);
