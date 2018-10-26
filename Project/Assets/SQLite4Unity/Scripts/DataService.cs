@@ -1,4 +1,5 @@
-﻿using SQLite4Unity;
+﻿using System;
+using SQLite4Unity;
 using UnityEngine;
 #if !UNITY_EDITOR
 using System.Collections;
@@ -117,13 +118,21 @@ public class DataService
 
         var dbPath = filepath;
 #endif
-            Debug.Log("Final PATH: " + dbPath);
+            DebugConsole.Log("Final PATH: " + dbPath);
             _connection = new SQLiteConnection(dbPath, SQLiteOpenFlags.ReadWrite | SQLiteOpenFlags.Create, new JsonConverter());
         }
         else
         {
             var filepath = string.Format("{0}/{1}", Application.persistentDataPath, DatabaseName);
-            _connection = new SQLiteConnection(filepath, SQLiteOpenFlags.ReadWrite | SQLiteOpenFlags.Create, new JsonConverter());
+            DebugConsole.Log("Final PATH: " + filepath);
+            try
+            {
+                _connection = new SQLiteConnection(filepath, SQLiteOpenFlags.ReadWrite | SQLiteOpenFlags.Create, new JsonConverter());
+            }
+            catch (Exception e)
+            {
+                DebugConsole.Log("error: " + e);
+            }
         }
 
     }

@@ -1,4 +1,4 @@
-
+Build/
 # Created by https://www.gitignore.io/api/unity
 
 ### Unity ###
@@ -88,3 +88,4 @@ _ReSharper*/
 *.nuget.props
 *.nuget.targets
 # End of https://www.gitignore.io/api/csharp
+
