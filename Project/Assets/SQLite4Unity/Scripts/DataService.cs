@@ -67,10 +67,12 @@ public class DataService
 
     private SQLiteConnection _connection;
 
-    public DataService(string DatabaseName)
+    public DataService(string DatabaseName,bool existDB = false)
     {
+        if (existDB)
+        {
 #if UNITY_EDITOR
-        var dbPath = string.Format(@"Assets/StreamingAssets/{0}", DatabaseName);
+            var dbPath = string.Format(@"Assets/StreamingAssets/{0}", DatabaseName);
 #else // check if file exists in Application.persistentDataPath
         var filepath = string.Format("{0}/{1}", Application.persistentDataPath, DatabaseName);
 
@@ -80,7 +82,7 @@ public class DataService
             // if it doesn't ->
             // open StreamingAssets directory and load the db ->
 
-#if UNITY_ANDROID 
+#if UNITY_ANDROID
             var loadDb = new WWW("jar:file://" + Application.dataPath + "!/assets/" + DatabaseName);  // this is the path to your StreamingAssets in android
             while (!loadDb.isDone) { }  // CAREFUL here, for safety reasons you shouldn't let this while loop unattended, place a timer and error check
             // then save to Application.persistentDataPath
@@ -115,8 +117,15 @@ public class DataService
 
         var dbPath = filepath;
 #endif
-        _connection = new SQLiteConnection(dbPath, SQLiteOpenFlags.ReadWrite | SQLiteOpenFlags.Create, new JsonConverter());
-        Debug.Log("Final PATH: " + dbPath);
+            Debug.Log("Final PATH: " + dbPath);
+            _connection = new SQLiteConnection(dbPath, SQLiteOpenFlags.ReadWrite | SQLiteOpenFlags.Create, new JsonConverter());
+        }
+        else
+        {
+            var filepath = string.Format("{0}/{1}", Application.persistentDataPath, DatabaseName);
+            _connection = new SQLiteConnection(filepath, SQLiteOpenFlags.ReadWrite | SQLiteOpenFlags.Create, new JsonConverter());
+        }
+
     }
 
     public void CreateDB()
