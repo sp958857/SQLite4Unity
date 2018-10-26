@@ -45,6 +45,9 @@
     <Reference Include="Microsoft.VisualStudio.TestPlatform.TestFramework.Extensions, Version=14.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
       <HintPath>..\packages\MSTest.TestFramework.1.2.0\lib\net45\Microsoft.VisualStudio.TestPlatform.TestFramework.Extensions.dll</HintPath>
     </Reference>
+    <Reference Include="Newtonsoft.Json, Version=11.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
+      <HintPath>..\packages\Newtonsoft.Json.11.0.2\lib\net45\Newtonsoft.Json.dll</HintPath>
+    </Reference>
     <Reference Include="nunit.framework, Version=3.11.0.0, Culture=neutral, PublicKeyToken=2638cd05610744eb, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
       <HintPath>..\packages\NUnit.3.11.0\lib\net45\nunit.framework.dll</HintPath>
@@ -85,6 +88,7 @@
     <Compile Include="Tests\obj\Debug\TemporaryGeneratedFile_5937a670-0e60-4077-877b-f7221da3dda1.cs" />
     <Compile Include="Tests\obj\Debug\TemporaryGeneratedFile_E7A71F73-0F8D-4B9B-B56E-8E70B10BC5D3.cs" />
     <Compile Include="Tests\OpenTests.cs" />
+    <Compile Include="Tests\SaveAsJsonTest.cs" />
     <Compile Include="Tests\ScalarTest.cs" />
     <Compile Include="Tests\SkipTest.cs" />
     <Compile Include="Tests\SQLCipherTest.cs" />
@@ -101,7 +105,6 @@
     <None Include="Tests\obj\Debug\SQLite.Tests.csproj.CopyComplete" />
     <None Include="Tests\obj\Debug\SQLite.Tests.csproj.CoreCompileInputs.cache" />
     <None Include="Tests\obj\Debug\SQLite.Tests.csprojResolveAssemblyReference.cache" />
-    <None Include="Tests\packages.config" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="Tests\bin\Debug\nunit.framework.dll" />
@@ -111,7 +114,6 @@
     <Content Include="Tests\obj\Debug\SQLite.Tests.csproj.FileListAbsolute.txt" />
     <Content Include="Tests\obj\Debug\SQLite.Tests.dll" />
     <Content Include="Tests\obj\Debug\SQLite.Tests.pdb" />
-    <Content Include="Tests\SQLite.Tests.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="Tests\obj\Debug\TempPE\" />
