@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 15
+VisualStudioVersion = 15.0.27428.2015
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SQLite4Unity", "SQLite4Unity\SQLite4Unity.csproj", "{5102CA33-CCC3-40EC-97BD-0866A7E61246}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SQLite4Unity.Test", "SQLite4Unity.Test\SQLite4Unity.Test.csproj", "{67E51A5B-5464-4C60-9437-DD623A0B9EB9}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{5102CA33-CCC3-40EC-97BD-0866A7E61246}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5102CA33-CCC3-40EC-97BD-0866A7E61246}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5102CA33-CCC3-40EC-97BD-0866A7E61246}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5102CA33-CCC3-40EC-97BD-0866A7E61246}.Release|Any CPU.Build.0 = Release|Any CPU
+		{67E51A5B-5464-4C60-9437-DD623A0B9EB9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{67E51A5B-5464-4C60-9437-DD623A0B9EB9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{67E51A5B-5464-4C60-9437-DD623A0B9EB9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{67E51A5B-5464-4C60-9437-DD623A0B9EB9}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {E61DF110-F28E-4F11-AC9D-E0C8B1EF9376}
+	EndGlobalSection
+EndGlobal
