@@ -5,7 +5,7 @@ I rewrite part of the code base on .Net 3.5, platform and use the sqlite3 lib do
 > Note: SQLite4Unity uses only the synchronous part of sqlite-net, so all the calls to the database are synchronous.
 
 ## New Feature
-Surport to serilize the class-type field into Json text, and deseriliz the Json text into a class instance.
+Surport to serilize the class-type property into Json text, and deseriliz the Json text into a class instance.
 
 2 steps to impliment this:
 ### 1. Define IJsonConverter on initialize db
